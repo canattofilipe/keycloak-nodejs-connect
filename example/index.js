@@ -14,28 +14,29 @@
  * the License.
  */
 
-var Keycloak = require('keycloak-connect');
-var hogan = require('hogan-express');
-var express = require('express');
-var session = require('express-session');
+var Keycloak = require("keycloak-connect");
+var hogan = require("hogan-express");
+var express = require("express");
+var session = require("express-session");
+const axios = require("axios");
 
 var app = express();
 
 var server = app.listen(3000, function () {
   var host = server.address().address;
   var port = server.address().port;
-  console.log('Example app listening at http://%s:%s', host, port);
+  console.log("Example app listening at http://%s:%s", host, port);
 });
 
 // Register '.mustache' extension with The Mustache Express
-app.set('view engine', 'html');
-app.set('views', require('path').join(__dirname, '/view'));
-app.engine('html', hogan);
+app.set("view engine", "html");
+app.set("views", require("path").join(__dirname, "/view"));
+app.engine("html", hogan);
 
 // A normal un-protected public URL.
 
-app.get('/', function (req, res) {
-  res.render('index');
+app.get("/", function (req, res) {
+  res.render("index");
 });
 
 // Create a session-store to be used by both the express-session
@@ -43,12 +44,14 @@ app.get('/', function (req, res) {
 
 var memoryStore = new session.MemoryStore();
 
-app.use(session({
-  secret: 'mySecret',
-  resave: false,
-  saveUninitialized: true,
-  store: memoryStore
-}));
+app.use(
+  session({
+    secret: "mySecret",
+    resave: false,
+    saveUninitialized: true,
+    store: memoryStore,
+  })
+);
 
 // Provide the session store to the Keycloak so that sessions
 // can be invalidated from the Keycloak console callback.
@@ -57,7 +60,7 @@ app.use(session({
 // installed from the Keycloak web console.
 
 var keycloak = new Keycloak({
-  store: memoryStore
+  store: memoryStore,
 });
 
 // Install the Keycloak middleware.
@@ -69,24 +72,62 @@ var keycloak = new Keycloak({
 // root URL.  Various permutations, such as /k_logout will ultimately
 // be appended to the admin URL.
 
-app.use(keycloak.middleware({
-  logout: '/logout',
-  admin: '/',
-  protected: '/protected/resource'
-}));
+app.use(
+  keycloak.middleware({
+    logout: "/logout",
+    admin: "/",
+    protected: "/protected/resource",
+  })
+);
 
-app.get('/login', keycloak.protect(), function (req, res) {
-  res.render('index', {
-    result: JSON.stringify(JSON.parse(req.session['keycloak-token']), null, 4),
-    event: '1. Authentication\n2. Login'
+app.get("/login", keycloak.protect(), function (req, res) {
+  res.render("index", {
+    result: JSON.stringify(JSON.parse(req.session["keycloak-token"]), null, 4),
+    event: "1. Authentication\n2. Login",
   });
 });
 
-app.get('/protected/resource', keycloak.enforcer(['resource:view', 'resource:write'], {
-  resource_server_id: 'nodejs-apiserver'
-}), function (req, res) {
-  res.render('index', {
-    result: JSON.stringify(JSON.parse(req.session['keycloak-token']), null, 4),
-    event: '1. Access granted to Default Resource\n'
-  });
+app.get(
+  "/protected/resource",
+  keycloak.enforcer(["resource:view", "resource:write"], {
+    resource_server_id: "nodejs-apiserver",
+  }),
+  function (req, res) {
+    res.render("index", {
+      result: JSON.stringify(
+        JSON.parse(req.session["keycloak-token"]),
+        null,
+        4
+      ),
+      event: "1. Access granted to Default Resource\n",
+    });
+  }
+);
+
+function listDevices(token) {
+  const options = {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  };
+
+  return axios.get("http://localhost:8000/device", options);
+}
+
+app.get("/list", keycloak.protect(), function (req, res) {
+  const token = JSON.parse(req.session["keycloak-token"]);
+  listDevices(token.access_token)
+    .then(function (response) {
+      res.render("index", {
+        result: JSON.stringify(response.data, null, 4),
+        event: "1. Authentication\n2. List Devices",
+      });
+    })
+    .catch(function (error) {
+      res.render("index", {
+        result: JSON.stringify(error, null, 4),
+        event: "1. Authentication\n2. List Devices",
+      });
+    });
 });
